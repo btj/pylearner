@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>JLearner</title>
+    <title>PyLearner</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.51.0/lib/codemirror.css">
     <script src="https://cdn.jsdelivr.net/npm/codemirror@5.51.0/lib/codemirror.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/codemirror@5.51.0/addon/edit/matchbrackets.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.51.0/addon/hint/show-hint.css">
     <script src="https://cdn.jsdelivr.net/npm/codemirror@5.51.0/addon/hint/show-hint.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.51.0/mode/clike/clike.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.51.0/mode/python/python.js"></script>
     <style>
     body {font-family: Arial, Helvetica, sans-serif}
     .result { font-style: italic; color: blue }
@@ -30,7 +30,7 @@
     </style>
   </head>
   <body style="background: lightgray">
-    <table width="100%"><tr><td width="*1"><h1>JLearner</h1></td><td style="text-align: center">Examples: <select id="examples"></select></td><td style="text-align: right"><a href="https://github.com/btj/jlearner/blob/master/exercises.md">Exercises</a></td></tr></table>
+    <table width="100%"><tr><td width="*1"><h1>PyLearner</h1></td><td style="text-align: center">Examples: <select id="examples"></select></td><td style="text-align: right"><a href="exercises.html">Exercises</a></td></tr></table>
     <table width="100%" style="table-layout: fixed"><tr>
     <td width="50%" style="vertical-align: top">
       <p><b>Declarations:</b></p>
@@ -88,14 +88,14 @@
     var declarationsEditor = CodeMirror.fromTextArea(document.getElementById('declarations'), {
       lineNumbers: false,
       matchBrackets: true,
-      mode: 'text/x-java'
+      mode: 'text/x-python'
     });
     declarationsEditor.setSize("100%", "15em");
     declarationsEditor.on('changes', () => clearErrorWidgets());
     var statementsEditor = CodeMirror.fromTextArea(document.getElementById('statements'), {
       lineNumbers: false,
       matchBrackets: true,
-      mode: 'text/x-java'
+      mode: 'text/x-python'
     });
     statementsEditor.on('changes', () => clearErrorWidgets());
     statementsEditor.setSize("100%", "10em");
@@ -117,7 +117,7 @@
     var expressionEditor = CodeMirror.fromTextArea(document.getElementById('expression'), {
       lineNumbers: false,
       matchBrackets: true,
-      mode: 'text/x-java'
+      mode: 'text/x-python'
     });
     expressionEditor.on('changes', () => clearErrorWidgets());
     expressionEditor.setSize("100%", "3em");
@@ -149,6 +149,6 @@
       arrow.x2.baseVal.value = toRects[0].left - machineRects[0].left;
       arrow.y2.baseVal.value = toRects[0].top - machineRects[0].top;
       </script -->
-  <script src="jlearner.js"></script>
+  <script src="pylearner.js"></script>
   </body>
 </html>

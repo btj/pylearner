@@ -4,20 +4,11 @@ function isAlpha(c) { return 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || c =
 function has(object, propertyName) { return Object.prototype.hasOwnProperty.call(object, propertyName); }
 
 keywordsList = [
-  'abstract', 'assert',
-  'boolean', 'break', 'byte',
-  'case', 'catch', 'char', 'class', 'const', 'continue',
-  'default', 'do', 'double',
-  'else', 'enum', 'extends',
-  'false', 'final', 'finally', 'float', 'for',
-  'goto',
-  'if', 'implements', 'import', 'instanceof', 'int', 'interface',
-  'long',
-  'native', 'new', 'null',
-  'package', 'private', 'protected', 'public',
-  'return', 'short', 'static', 'strictfp', 'super', 'switch', 'synchronized',
-  'this', 'throw', 'throws', 'transient', 'true', 'try',
-  'void', 'volatile', 'while'
+  'False', 'None', 'True', 'and', 'as', 'assert', 'async',
+  'await', 'break', 'class', 'continue',
+  'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from',
+  'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not',
+  'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield'
 ];
 
 keywords = {};
@@ -26,11 +17,13 @@ for (let keyword of keywordsList)
   keywords[keyword] = true;
 
 operatorsList = [
-  '(', ')', '{', '}', '[', ']', ';', ',', '.', '...', '@', '::',
-  '=', '>', '<', '!', '-', '?', ':', '->',
-  '==', '>=', '<=', '!=', '&&', '||', '++', '--',
-  '+', '-', '*', '/', '&', '|', '^', '%', '<<', '>>', '>>>',
-  '+=', '-=', '*=', '/=', '&=', '|=', '^=', '%=', '<<=', '>>=', '>>>='
+  '+', '-', '*', '**', '/', '//', '%', '@',
+  '<<', '>>', '&', '|', '^', '~', ':=',
+  '<', '>', '<=', '>=', '==', '!=',
+  '(', ')', '[', ']', '{', '}',
+  ',', ':', '.', ';', '@', '=', '->',
+  '+=', '-=', '*=', '/=', '//=', '%=', '@=',
+  '&=', '|=', '^=', '>>=', '<<=', '**='
 ]
 
 operators = {};
@@ -47,7 +40,16 @@ class Scanner {
     this.doc = doc;
     this.text = text;
     this.pos = -1;
+    this.startOfLine = 0;
+    this.indentStack = [''];
+    this.bracketsDepth = 0;
+    this.emittedEOL = true;
+    this.onNewLine = true;
     this.eat();
+  }
+
+  currentIndent() {
+    return this.indentStack[this.indentStack.length - 1];
   }
 
   eat() {
@@ -59,45 +61,59 @@ class Scanner {
     eatWhite:
     for (;;) {
       switch (this.c) {
-        case ' ':
-        case '\t':
         case '\n':
         case '\r':
           this.eat();
+          this.startOfLine = this.pos;
+          this.onNewLine = true;
           break;
-        case '/':
-          let commentStart = this.pos;
-          if (this.pos + 1 < this.text.length) {
-            switch (this.text.charAt(this.pos + 1)) {
-              case '/':
-                this.eat();
-                this.eat();
-                while (this.c != '<EOF>' && this.c != '\n' && this.c != '\r')
-                  this.eat();
-                continue eatWhite;
-              case '*':
-                this.eat();
-                this.eat();
-                for (;;) {
-                  if (this.c == '<EOF>')
-                    throw new LocError({doc: this.doc, start: commentStart, end: this.pos}, "Missing terminator for multiline comment");
-                  else if (this.c == '*' && this.pos + 1 < this.text.length && this.text.charAt(this.pos + 1) == '/') {
-                    this.eat();
-                    this.eat();
-                    continue eatWhite;
-                  } else
-                    this.eat();
-                }
-              default:
-                break eatWhite;    
-            }
-          } else
-            break eatWhite;
+        case ' ':
+        case '\t':
+          this.eat();
+          break;
+        case '#':
+          this.eat();
+          while (this.c != '<EOF>' && this.c != '\n' && this.c != '\r')
+            this.eat();
+          break;
         default:
           break eatWhite;
       }
     }
     this.tokenStart = this.pos;
+    if (this.c == '<EOF>') {
+      if (this.bracketsDepth > 0)
+        return "EOF"; // Parser will detect error
+      if (!this.emittedEOL) {
+        this.emittedEOL = true;
+        return "EOL";
+      }
+      if (this.currentIndent() != '') {
+        this.indentStack.pop();
+        return "DEDENT";
+      }
+      return 'EOF';
+    }
+    if (this.onNewLine) {
+      if (this.bracketsDepth == 0) {
+        if (!this.emittedEOL) {
+          this.emittedEOL = true;
+          return "EOL";
+        }
+        let indent = this.text.substring(this.startOfLine, this.tokenStart);
+        if (indent == this.currentIndent()) {
+        } else if (indent.startsWith(this.currentIndent())) {
+          this.indentStack.push(indent);
+          return "INDENT";
+        } else if (this.indentStack.includes(indent)) {
+          this.indentStack.pop();
+          return "DEDENT";
+        } else
+          throw new LocError({doc: this.doc, start: this.tokenStart, end: this.tokenStart + 1}, "Bad indentation");
+      }
+    }
+    this.onNewLine = false;
+    this.emittedEOL = false;
     if (isDigit(this.c)) {
       this.eat();
       while (isDigit(this.c))
@@ -113,10 +129,8 @@ class Scanner {
       this.value = this.text.substring(this.tokenStart, this.pos);
       if (has(keywords, this.value))
         return this.value;
-      return 'A' <= c0 && c0 <= 'Z' ? "TYPE_IDENT" : "IDENT";
+      return "IDENT";
     }
-    if (this.c == '<EOF>')
-      return 'EOF';
     
     let newPos = this.pos + 1;
     let longestOperatorFound = null;
@@ -133,6 +147,10 @@ class Scanner {
       throw new LocError({doc: this.doc, start: this.tokenStart, end: this.tokenStart + 1}, "Bad character");
     this.pos += longestOperatorFound.length - 1;
     this.eat();
+    if (longestOperatorFound in ['(', '[', '{'])
+      this.bracketsDepth++;
+    else if (longestOperatorFound in [')', ']', '}'])
+      this.bracketsDepth--;
     return longestOperatorFound;
   }
 }
@@ -877,6 +895,14 @@ class Type {
   }
 }
 
+class AnyType extends Type {
+  constructor() { super(); }
+  defaultValue() { return null; }
+  toString() { return "Any"; }
+}
+
+let anyType = new AnyType();
+
 class IntType extends Type {
   constructor() { super(); }
   defaultValue() { return 0; }
@@ -935,6 +961,15 @@ class ArrayType extends ReferenceType {
 class TypeExpression extends ASTNode {
   constructor(loc) {
     super(loc, loc);
+  }
+}
+
+class ImplicitTypeExpression extends ASTNode {
+  constructor() {
+    super(null);
+  }
+  resolve() {
+    return anyType;
   }
 }
 
@@ -1389,14 +1424,14 @@ class Parser {
         this.expect(")");
         this.popLoc();
         return e;
-      case "null":
+      case "None":
         this.next();
         return new NullLiteral(this.popLoc());
-      case "true":
-      case "false": {
+      case "True":
+      case "False": {
         let kwd = this.token;
         this.next();
-        return new BooleanLiteral(this.popLoc(), kwd == "true");
+        return new BooleanLiteral(this.popLoc(), kwd == "True");
       }
       case "++":
       case "--": {
@@ -1545,7 +1580,7 @@ class Parser {
   parseConjunction() {
     this.pushStart();
     let e = this.parseRelationalExpression();
-    if (this.token == '&&') {
+    if (this.token == 'and') {
       this.pushStart();
       this.next();
       let instrLoc = this.popLoc();
@@ -1560,7 +1595,7 @@ class Parser {
   parseDisjunction() {
     this.pushStart();
     let e = this.parseConjunction();
-    if (this.token == '||') {
+    if (this.token == 'or') {
       this.pushStart();
       this.next();
       let instrLoc = this.popLoc();
@@ -1654,83 +1689,52 @@ class Parser {
       this.parseError("Type expected");
     return type;
   }
-  
+
+  parseSuite() {
+    this.pushStart();
+    this.expect('EOL');
+    this.expect('INDENT');
+    let stmts = this.parseStatements({'DEDENT': true});
+    this.expect('DEDENT');
+    return new BlockStatement(this.popLoc(), stmts);
+  }
+
   parseStatement() {
     this.pushStart();
     switch (this.token) {
-      case '{': {
-        this.next();
-        let stmts = this.parseStatements({'}': true});
-        this.expect('}');
-        return new BlockStatement(this.popLoc(), stmts);
-      }
       case 'while': {
         this.pushStart();
         this.next();
         let instrLoc = this.popLoc();
-        this.expect('(');
         let condition = this.parseExpression();
-        this.expect(')');
-        let body = this.parseStatement();
+        this.expect(':');
+        let body = this.parseSuite();
         return new WhileStatement(this.popLoc(), instrLoc, condition, body);
-      }
-      case 'for': {
-        this.pushStart();
-        this.next();
-        let instrLoc = this.popLoc();
-        this.expect('(');
-        let stmts = [];
-        if (this.token != ';')
-          stmts.push(this.parseStatement());
-        else
-          this.next();
-        let condition;
-        if (this.token == ';')
-          condition = new BooleanLiteral(instrLoc, true, true);
-        else
-          condition = this.parseExpression();
-        this.expect(';');
-        let incrs = [];
-        if (this.token != ')')
-          for (;;) {
-            incrs.push(this.parseExpression());
-            if (this.token != ',')
-              break;
-            this.next();
-          }
-        this.expect(')');
-        let body = this.parseStatement();
-        let loc = this.popLoc();
-        let bodyStmts = [body];
-        for (let incr of incrs)
-          bodyStmts.push(new ExpressionStatement(incr.loc, incr.instrLoc, incr));
-        stmts.push(new WhileStatement(loc, instrLoc, condition, new BlockStatement(loc, bodyStmts)));
-        return new BlockStatement(loc, stmts);
       }
       case 'return': {
         this.pushStart();
         this.next();
         let instrLoc = this.popLoc();
         let e;
-        if (this.token == ';')
+        if (this.token == 'EOL')
           e = null;
         else
           e = this.parseExpression();
-        this.expect(';');
+        this.expect('EOL');
         return new ReturnStatement(this.popLoc(), instrLoc, e);
       }
       case 'if': {
         this.pushStart();
         this.next();
         let instrLoc = this.popLoc();
-        this.expect('(');
         let condition = this.parseExpression();
-        this.expect(')');
-        let thenBody = this.parseStatement();
+        this.expect(':');
+        let thenBody = this.parseSuite();
         let elseBody = null;
         if (this.token == 'else') {
           this.next();
-          elseBody = this.parseStatement();
+          this.expect(':');
+          elseBody = this.parseSuite();
         }
         return new IfStatement(this.popLoc(), instrLoc, condition, thenBody, elseBody);
       }
@@ -1739,46 +1743,13 @@ class Parser {
         this.next();
         let instrLoc = this.popLoc();
         let condition = this.parseExpression();
-        this.expect(';');
+        this.expect('EOL');
         return new AssertStatement(this.popLoc(), instrLoc, condition);
       }
     }
-    this.pushStart();
-    let type = this.tryParseType();
-    if (type != null) {
-      this.pushStart();
-      let x = this.expect("IDENT");
-      let nameLoc = this.popLoc();
-      this.expect("=");
-      let instrLoc = this.popLoc();
-      let e;
-      if (this.token == '{') {
-        if (!(type instanceof ArrayTypeExpression))
-          this.parseError("Cannot initialize this variable with an array initializer; its type is not an array type.");
-        this.pushStart();
-        this.pushStart();
-        this.next();
-        let newArrayInstrLoc = this.popLoc();
-        let elementExpressions = [];
-        if (this.token != '}') {
-          for (;;) {
-            elementExpressions.push(this.parseExpression());
-            if (this.token != ',')
-              break;
-            this.next();
-          }
-        }
-        this.expect('}');
-        e = new NewArrayWithInitializerExpression(this.popLoc(), newArrayInstrLoc, type.elementTypeExpression, elementExpressions);
-      } else
-        e = this.parseExpression();
-      this.expect(";");
-      return new VariableDeclarationStatement(this.popLoc(), instrLoc, type, nameLoc, x, e);
-    }
-    this.popLoc();
     let e = this.parseExpression();
     this.pushStart();
-    this.expect(";");
+    this.expect("EOL");
     let instrLoc = this.popLoc();
     return new ExpressionStatement(this.popLoc(), instrLoc, e);
   }
@@ -1830,9 +1801,8 @@ class Parser {
           fields.push(this.parseClassMemberDeclaration());
         this.expect('}');
         return new Class(this.popLoc(), x, fields);
-      default:
-        // Parse method
-        let type = this.parseType();
+      case 'def':
+        this.next();
         this.pushStart();
         let name = this.expect('IDENT');
         let nameLoc = this.popLoc();
@@ -1841,7 +1811,7 @@ class Parser {
         if (this.token != ')') {
           for (;;) {
             this.pushStart();
-            let paramType = this.parseType();
+            let paramType = new ImplicitTypeExpression();
             this.pushStart();
             let paramName = this.expect('IDENT');
             let paramNameLoc = this.popLoc();
@@ -1852,10 +1822,10 @@ class Parser {
           }
         }
         this.expect(')');
-        this.expect('{');
-        let body = this.parseStatements({'}': true});
-        this.expect('}');
-        return new MethodDeclaration(this.popLoc(), type, nameLoc, name, parameters, body);
+        this.expect(':');
+        let body = this.parseSuite();
+        let type = new ImplicitTypeExpression();
+        return new MethodDeclaration(this.popLoc(), type, nameLoc, name, parameters, body.stmts);
     }
   }
   
@@ -1885,12 +1855,12 @@ function checkDeclarations(declarations) {
       toplevelMethods[declaration.name] = declaration;
     }
   }
-  for (let c in classes)
-    classes[c].enter();
-  for (let m in toplevelMethods)
-    toplevelMethods[m].enter();
-  for (let m in toplevelMethods)
-    toplevelMethods[m].check();
+  // for (let c in classes)
+  //   classes[c].enter();
+  // for (let m in toplevelMethods)
+  //   toplevelMethods[m].enter();
+  // for (let m in toplevelMethods)
+  //   toplevelMethods[m].check();
 }
 
 let variablesTable = document.getElementById('variables');
@@ -2051,8 +2021,8 @@ async function executeStatements(step) {
     let parser = new Parser(statementsEditor, stmtsText);
     let stmts = parser.parseStatements({'EOF': true});
     let typeScope = new Scope(toplevelScope); // The type bindings should not be present when executing
-    for (let stmt of stmts)
-      stmt.check(typeScope);
+    //for (let stmt of stmts)
+    //  stmt.check(typeScope);
     currentBreakCondition = () => step;
     for (let stmt of stmts) {
       if (await stmt.execute(toplevelScope) !== undefined)
@@ -2162,7 +2132,7 @@ async function evaluateExpression(step) {
     let parser = new Parser(expressionEditor, exprText);
     let e = parser.parseExpression();
     parser.expect("EOF");
-    e.check_(toplevelScope);
+    //e.check_(toplevelScope);
     currentBreakCondition = () => step;
     await e.evaluate(toplevelScope);
     let [v] = pop(1);
@@ -2303,185 +2273,162 @@ function updateButtonStates() {
 examples = [{
   title: 'Faculty',
   declarations:
-`/** @pre x is positive */
-int fac(int x) {
-  if (x == 1)
-    return 1;
-  else
-    return x * fac(x - 1);
-}`,
+`# precondition: x is positive
+def fac(x):
+    if x == 1:
+        return 1
+    else:
+        return x * fac(x - 1)
+`,
   statements:
-`assert fac(2) == 2;
-assert fac(4) == 24;`,
+`assert fac(2) == 2
+assert fac(4) == 24`,
   expression: `fac(3)`
 }, {
-  title: 'Find an element in an array',
+  title: 'Find an element in a list',
   declarations:
-`int find(int[] haystack, int needle) {
-  int index = 0;
-  for (;;) {
-    if (index == haystack.length)
-      return -1;
-    if (haystack[index] == needle)
-      return index;
-    index++;
-  }
-}`,
+`def find(haystack, needle):
+    index = 0
+    while True:
+        if index == len(haystack):
+            return -1
+        if haystack[index] == needle:
+            return index
+        index += 1
+`,
   statements:
-`int[] numbers = {3, 13, 7, 2};
-assert find(numbers, 13) == 1;
-assert find(numbers, 8) == -1;`,
+`numbers = [3, 13, 7, 2]
+assert find(numbers, 13) == 1
+assert find(numbers, 8) == -1`,
   expression: 'find(numbers, 7)'
 }, {
-  title: 'Copy an array',
+  title: 'Copy a list',
   declarations:
-`int[] copy(int[] array) {
-  int[] copy = new int[array.length];
-  for (int i = 0; i < array.length; i++)
-    copy[i] = array[i];
-  return copy;
-}`,
+`def copy(list):
+    copy = []
+    for x in list:
+        copy.append(x)
+    return copy
+`,
   statements:
-`int[] numbers = {10, 20, 30, 40};
-int[] numbersCopy = copy(numbers);
-assert numbersCopy != numbers;
-assert numbersCopy.length == numbers.length;
-for (int i = 0; i < numbers.length; i++)
-  assert numbersCopy[i] == numbers[i];`,
+`numbers = [10, 20, 30, 40]
+numbersCopy = copy(numbers)
+assert numbersCopy is not numbers
+assert len(numbersCopy) == len(numbers)
+for i in range(len(numbers)):
+    assert numbersCopy[i] == numbers[i]`,
   expression: ''
 }, {
   title: 'Transpose a matrix (copy)',
   declarations:
-`/** @pre The given matrix is square */
-int[][] transpose(int[][] matrix) {
-  int[][] t = new int[matrix.length][];
-  for (int row = 0; row < matrix.length; row++)
-    t[row] = new int[matrix.length];
-  for (int row = 0; row < matrix.length; row++)
-    for (int column = 0; column < matrix.length; column++)
-      t[column][row] = matrix[row][column];
-  return t;
-}`,
+`# precondition: The given matrix is square
+def transpose(matrix):
+    t = []
+    for i in range(len(matrix)):
+        row = []
+        for j in range(len(matrix[i])):
+            row.append(matrix[j][i])
+        t.append(row)
+    return t
+`,
   statements:
-`int[][] myMatrix = {
-  new int[] {1, 2, 3},
-  new int[] {4, 5, 6},
-  new int[] {7, 8, 9}
-};
-int[][] myTranspose = transpose(myMatrix);`,
+`myMatrix = [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9]
+]
+myTranspose = transpose(myMatrix)`,
   expressions: ''
 }, {
   title: 'Transpose a matrix (in place)',
   declarations:
-`/** @pre The given matrix is square */
-void transpose(int[][] matrix) {
-  for (int row = 0; row < matrix.length; row++)
-    for (int column = row + 1; column < matrix.length; column++) {
-      int element = matrix[row][column];
-      matrix[row][column] = matrix[column][row];
-      matrix[column][row] = element;
-    }
-}`,
+`# precondition: The given matrix is square
+def transpose(matrix):
+    for row in range(len(matrix)):
+        for column in range(row + 1, len(matrix[row])):
+            element = matrix[row][column]
+            matrix[row][column] = matrix[column][row]
+            matrix[column][row] = element
+`,
   statements:
-`int[][] myMatrix = {
-  new int[] {1, 2, 3},
-  new int[] {4, 5, 6},
-  new int[] {7, 8, 9}
-};
-transpose(myMatrix);`,
+`myMatrix = [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9]
+]
+transpose(myMatrix)`,
   expressions: ''
 }, {
   title: 'Account transfer',
   declarations:
-`class Account {
-  int balance;
-}
-void transfer(Account from, Account to, int amount) {
-  from.balance -= amount;
-  to.balance += amount;
-}`,
+`Account = make_dataclass('Account', ['balance'])
+def transfer(from, to, amount):
+    from.balance -= amount
+    to.balance += amount
+`,
   statements:
-`Account account1 = new Account();
-Account account2 = new Account();
-transfer(account1, account2, 500);
-assert account1.balance == -500;
-assert account2.balance == 500;
-transfer(account1, account1, 200);
-assert account1.balance == -500;`,
+`account1 = Account(0)
+account2 = Account(0)
+transfer(account1, account2, 500)
+assert account1.balance == -500
+assert account2.balance == 500
+transfer(account1, account1, 200)
+assert account1.balance == -500`,
   expression: ''
 }, {
   title: 'Linked list: sum (iterative)',
   declarations:
-`class Node {
-  int value;
-  Node next;
-}
-int sum(Node node) {
-  int sum = 0;
-  while (node != null) {
-    sum += node.value;
-    node = node.next;
-  }
-  return sum;
-}`,
+`Node = make_dataclass('Node', ['value', 'next'])
+def sum(node):
+    sum = 0
+    while node is not None:
+        sum += node.value
+        node = node.next
+    return sum`,
   statements:
-`Node first = new Node(); first.value = 1;
-Node second = new Node(); second.value = 2;
-Node third = new Node(); third.value = 3;
-first.next = second;
-second.next = third;
-assert sum(first) == 6;`,
+`first = Node(1, None)
+second = Node(2, None)
+third = Node(3, None)
+first.next = second
+second.next = third
+assert sum(first) == 6`,
   expression: 'sum(first)'
 }, {
   title: 'Linked list: sum (recursive)',
   declarations:
-`class Node {
-  int value;
-  Node next;
-}
-int sum(Node node) {
-  if (node == null)
-    return 0;
-  else
-    return node.value + sum(node.next);
-}`,
+`Node = make_dataclass('Node', ['value', 'next'])
+def sum(node):
+    if node is None:
+        return 0
+    else:
+        return node.value + sum(node.next)`,
   statements:
-`Node first = new Node(); first.value = 1;
-Node second = new Node(); second.value = 2;
-Node third = new Node(); third.value = 3;
-first.next = second;
-second.next = third;
-assert sum(first) == 6;`,
+`first = Node(1, None)
+second = Node(2, None)
+third = Node(3, None)
+first.next = second
+second.next = third
+assert sum(first) == 6`,
   expression: 'sum(first)'
 }, {
   title: 'linked list: copy',
   declarations:
-`class Node {
-  int value;
-  Node next;
-}
-Node copy(Node node) {
-  if (node == null)
-    return null;
-  Node newNode = new Node();
-  newNode.value = node.value;
-  newNode.next = copy(node.next);
-  return newNode;
-}`,
+`Node = make_dataclass('Node', ['value', 'next'])
+def copy(node):
+    if node is None:
+        return None
+    return Node(node.value, copy(node.next))`,
   statements:
-`Node first = new Node();
-first.value = 1;
-Node second = new Node();
-second.value = 2;
-Node third = new Node();
-third.value = 3;
-first.next = second;
-second.next = third;
-Node copied = copy(first);
-assert copied != first;
-assert copied.value == first.value;
-assert copied.next != first.next;
-assert copied.next.value == first.next.value;`,
+`first = Node(1, None)
+second = Node(2, None)
+third = Node(3, None)
+first.next = second
+second.next = third
+copied = copy(first)
+assert copied is not first
+assert copied.value == first.value
+assert copied.next is not first.next
+assert copied.next.value == first.next.value`,
   expression: ''
 }]
 
