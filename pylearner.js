@@ -2339,135 +2339,26 @@ assert find(numbers, 13) == 1
 assert find(numbers, 8) == -1`,
   expression: 'find(numbers, 7)'
 }, {
-  title: 'Copy a list',
+  title: 'Bubblesort',
   declarations:
-`def copy(list):
-    copy = []
-    for x in list:
-        copy.append(x)
-    return copy
+`def bubblesort(list):
+    todo = len(list)
+    while todo > 1:
+        index = 1
+        while index < todo:
+            if list[index - 1] > list[index]:
+                tmp = list[index - 1]
+                list[index - 1] = list[index]
+                list[index] = tmp
+            index += 1
+        todo -= 1
 `,
   statements:
-`numbers = [10, 20, 30, 40]
-numbersCopy = copy(numbers)
-assert numbersCopy is not numbers
-assert len(numbersCopy) == len(numbers)
-for i in range(len(numbers)):
-    assert numbersCopy[i] == numbers[i]`,
+`numbers = [40, 10, 30, 20]
+bubblesort(numbers)`,
   expression: ''
-}, {
-  title: 'Transpose a matrix (copy)',
-  declarations:
-`# precondition: The given matrix is square
-def transpose(matrix):
-    t = []
-    for i in range(len(matrix)):
-        row = []
-        for j in range(len(matrix[i])):
-            row.append(matrix[j][i])
-        t.append(row)
-    return t
-`,
-  statements:
-`myMatrix = [
-    [1, 2, 3],
-    [4, 5, 6],
-    [7, 8, 9]
+}
 ]
-myTranspose = transpose(myMatrix)`,
-  expressions: ''
-}, {
-  title: 'Transpose a matrix (in place)',
-  declarations:
-`# precondition: The given matrix is square
-def transpose(matrix):
-    for row in range(len(matrix)):
-        for column in range(row + 1, len(matrix[row])):
-            element = matrix[row][column]
-            matrix[row][column] = matrix[column][row]
-            matrix[column][row] = element
-`,
-  statements:
-`myMatrix = [
-    [1, 2, 3],
-    [4, 5, 6],
-    [7, 8, 9]
-]
-transpose(myMatrix)`,
-  expressions: ''
-}, {
-  title: 'Account transfer',
-  declarations:
-`Account = make_dataclass('Account', ['balance'])
-def transfer(from, to, amount):
-    from.balance -= amount
-    to.balance += amount
-`,
-  statements:
-`account1 = Account(0)
-account2 = Account(0)
-transfer(account1, account2, 500)
-assert account1.balance == -500
-assert account2.balance == 500
-transfer(account1, account1, 200)
-assert account1.balance == -500`,
-  expression: ''
-}, {
-  title: 'Linked list: sum (iterative)',
-  declarations:
-`Node = make_dataclass('Node', ['value', 'next'])
-def sum(node):
-    sum = 0
-    while node is not None:
-        sum += node.value
-        node = node.next
-    return sum`,
-  statements:
-`first = Node(1, None)
-second = Node(2, None)
-third = Node(3, None)
-first.next = second
-second.next = third
-assert sum(first) == 6`,
-  expression: 'sum(first)'
-}, {
-  title: 'Linked list: sum (recursive)',
-  declarations:
-`Node = make_dataclass('Node', ['value', 'next'])
-def sum(node):
-    if node is None:
-        return 0
-    else:
-        return node.value + sum(node.next)`,
-  statements:
-`first = Node(1, None)
-second = Node(2, None)
-third = Node(3, None)
-first.next = second
-second.next = third
-assert sum(first) == 6`,
-  expression: 'sum(first)'
-}, {
-  title: 'linked list: copy',
-  declarations:
-`Node = make_dataclass('Node', ['value', 'next'])
-def copy(node):
-    if node is None:
-        return None
-    return Node(node.value, copy(node.next))`,
-  statements:
-`first = Node(1, None)
-second = Node(2, None)
-third = Node(3, None)
-first.next = second
-second.next = third
-copied = copy(first)
-assert copied is not first
-assert copied.value == first.value
-assert copied.next is not first.next
-assert copied.next.value == first.next.value`,
-  expression: ''
-}]
 
 function setExample(example) {
   reset();
