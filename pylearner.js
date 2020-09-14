@@ -2354,8 +2354,10 @@ assert find(numbers, 8) == -1`,
         todo -= 1
 `,
   statements:
-`numbers = [40, 10, 30, 20]
-bubblesort(numbers)`,
+`numbers1 = [40, 10, 30, 20]
+numbers2 = numbers1
+numbers3 = [40, 10, 30, 20]
+bubblesort(numbers1)`,
   expression: ''
 }
 ]
