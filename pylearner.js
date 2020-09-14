@@ -156,8 +156,8 @@ class Scanner {
 }
 
 class LocalBinding {
-  constructor(declaration, value) {
-    this.declaration = declaration;
+  constructor(name, value) {
+    this.name = name;
     this.value = value;
   }
   
@@ -166,7 +166,7 @@ class LocalBinding {
   }
 
   getNameHTML() {
-    return this.declaration.type.resolve().toHTML() + " " + this.declaration.name;
+    return this.name;
   }
 }
 
@@ -195,10 +195,13 @@ class Scope {
     return null;
   }
   
-  lookup(loc, x) {
+  lookup(loc, x, createIfMissing) {
     let result = this.tryLookup(x);
     if (result == null)
-      throw new ExecutionError(loc, "No such variable in scope: " + x);
+      if (createIfMissing) {
+        result = this.bindings[x] = new LocalBinding(x, null);
+      } else
+        throw new ExecutionError(loc, "No such variable in scope: " + x);
     return result;
   }
   
@@ -417,8 +420,8 @@ class VariableExpression extends Expression {
     return env.lookup(this.loc, this.name).declaration.type.type;
   }
   
-  async evaluateBinding(env) {
-    return () => env.lookup(this.loc, this.name);
+  async evaluateBinding(env, allowReadOnly) {
+    return () => env.lookup(this.loc, this.name, !allowReadOnly);
   }
   
   async evaluate(env) {
@@ -679,9 +682,9 @@ function initialArrayFieldBindings(initialContents) {
   return fields;
 }
 
-class JavaArrayObject extends JavaObject {
+class ListObject extends JavaObject {
   constructor(elementType, initialContents) {
-    super(new ArrayType(elementType), initialArrayFieldBindings(initialContents));
+    super(new ListType(elementType), initialArrayFieldBindings(initialContents));
     this.length = initialContents.length;
   }
 }
@@ -716,7 +719,7 @@ class NewArrayExpression extends Expression {
   check(env) {
     this.elementType.resolve();
     this.lengthExpr.checkAgainst(env, intType);
-    return new ArrayType(this.elementType.type);
+    return new ListType(this.elementType.type);
   }
 
   async evaluate(env) {
@@ -726,11 +729,11 @@ class NewArrayExpression extends Expression {
     if (length < 0)
       this.executionError("Negative array length");
     this.elementType.resolve();
-    this.push(new JavaArrayObject(this.elementType.type, Array(length).fill(this.elementType.type.defaultValue())));
+    this.push(new ListObject(this.elementType.type, Array(length).fill(this.elementType.type.defaultValue())));
   }
 }
 
-class NewArrayWithInitializerExpression extends Expression {
+class ListExpression extends Expression {
   constructor(loc, instrLoc, elementType, elementExpressions) {
     super(loc, instrLoc);
     this.elementType = elementType;
@@ -741,7 +744,7 @@ class NewArrayWithInitializerExpression extends Expression {
     this.elementType.resolve();
     for (let e of this.elementExpressions)
       e.checkAgainst(env, this.elementType.type);
-    return new ArrayType(this.elementType.type);
+    return new ListType(this.elementType.type);
   }
 
   async evaluate(env) {
@@ -750,7 +753,7 @@ class NewArrayWithInitializerExpression extends Expression {
     await this.breakpoint();
     let elements = pop(this.elementExpressions.length);
     this.elementType.resolve();
-    this.push(new JavaArrayObject(this.elementType.type, elements));
+    this.push(new ListObject(this.elementType.type, elements));
   }
 }
 
@@ -770,7 +773,7 @@ class SelectExpression extends Expression {
 
   check(env) {
     let targetType = this.target.check_(env);
-    if (targetType instanceof ArrayType) {
+    if (targetType instanceof ListType) {
       if (this.selector != "length")
         this.executionError("Arrays do not have a field named '" + this.selector + "'");
       return intType;
@@ -786,7 +789,7 @@ class SelectExpression extends Expression {
     await this.target.evaluate(env);
     return pop => {
       let [target] = pop(1);
-      if (target instanceof JavaArrayObject) {
+      if (target instanceof ListObject) {
         if (this.selector != "length")
           this.executionError(target + " does not have a field named '" + this.selector + "'");
         if (allowReadOnly !== true)
@@ -817,7 +820,7 @@ class SubscriptExpression extends Expression {
 
   check(env) {
     let targetType = this.target.check_(env);
-    if (!(targetType instanceof ArrayType))
+    if (!(targetType instanceof ListType))
       this.executionError("Target of subscript expression must be of array type");
     this.index.checkAgainst(env, intType);
     return targetType.elementType;
@@ -828,7 +831,7 @@ class SubscriptExpression extends Expression {
     await this.index.evaluate(env);
     return pop => {
       let [target, index] = pop(2);
-      if (!(target instanceof JavaArrayObject))
+      if (!(target instanceof ListObject))
         this.executionError(target + " is not an array");
       if (index < 0)
         this.executionError("Negative array index " + index);
@@ -946,15 +949,15 @@ class ClassType extends ReferenceType {
   toString() { return this.class_.name; }
 }
 
-class ArrayType extends ReferenceType {
+class ListType extends ReferenceType {
   constructor(elementType) {
     super();
     this.elementType = elementType;
   }
-  toString() { return this.elementType.toString() + "[]"; }
-  toHTML() { return this.elementType.toHTML() + "[]"; }
+  toString() { return "list"; }
+  toHTML() { return "list"; }
   equals(other) {
-    return other instanceof ArrayType && this.elementType.equals(other.elementType);
+    return other instanceof ListType && this.elementType.equals(other.elementType);
   }
 }
 
@@ -1002,7 +1005,7 @@ class ArrayTypeExpression extends TypeExpression {
   }
   resolve() {
     this.elementType = this.elementTypeExpression.resolve();
-    this.type = new ArrayType(this.elementType);
+    this.type = new ListType(this.elementType);
     return this.type;
   }
 }
@@ -1027,7 +1030,7 @@ class VariableDeclarationStatement extends Statement {
     if (env.tryLookup(this.name) != null)
       throw new ExecutionError(this.nameLoc, "Variable '" + this.name + "' already exists in this scope.");
     this.init.checkAgainst(env, this.type.type);
-    env.bindings[this.name] = new LocalBinding(this, this.type.type);
+    env.bindings[this.name] = new LocalBinding(this.name, this.type.type);
   }
   
   async execute(env) {
@@ -1036,7 +1039,7 @@ class VariableDeclarationStatement extends Statement {
     await this.init.evaluate(env);
     await this.breakpoint();
     let [v] = pop(1);
-    env.bindings[this.name] = new LocalBinding(this, v);
+    env.bindings[this.name] = new LocalBinding(this.name, v);
   }
 }
 
@@ -1232,9 +1235,9 @@ class MethodDeclaration extends Declaration {
     for (let p of this.parameterDeclarations) {
       if (has(env.bindings, p.name))
         this.executionError("Duplicate parameter name");
-      env.bindings[p.name] = new LocalBinding(p, p.type.type);
+      env.bindings[p.name] = new LocalBinding(p.name, p.type.type);
     }
-    env.bindings["#result"] = new LocalBinding(this, this.returnType.type);
+    env.bindings["#result"] = new LocalBinding("#result", this.returnType.type);
     for (let stmt of this.bodyBlock)
       stmt.check(env);
   }
@@ -1246,7 +1249,7 @@ class MethodDeclaration extends Declaration {
     let stackFrame = new StackFrame(this.name, env);
     callStack.push(stackFrame);
     for (let i = 0; i < args.length; i++)
-      env.bindings[this.parameterDeclarations[i].name] = new LocalBinding(this.parameterDeclarations[i], args[i]);
+      env.bindings[this.parameterDeclarations[i].name] = new LocalBinding(this.parameterDeclarations[i].name, args[i]);
     let result;
     for (let stmt of this.bodyBlock) {
       result = await stmt.execute(env);
@@ -1371,6 +1374,23 @@ class Parser {
       case "IDENT":
         this.next();
         return new VariableExpression(this.popLoc(), this.lastValue);
+      case "[": {
+        this.pushStart();
+        this.next();
+        let instrLoc = this.popLoc();
+        let elementExpressions = [];
+        if (this.token != ']') {
+          for (;;) {
+            elementExpressions.push(this.parseExpression());
+            if (this.token != ',')
+              break;
+            this.next();
+          }
+        }
+        this.expect(']');
+        let type = new ImplicitTypeExpression();
+        return new ListExpression(this.popLoc(), instrLoc, type, elementExpressions);
+      }
       case "new":
         this.next();
         let instrLoc = this.dupLoc();
@@ -1410,7 +1430,7 @@ class Parser {
           } else {
             if (elementExpressions == null)
               throw new LocError(loc, "Mention either a length or an initializer");
-            return new NewArrayWithInitializerExpression(loc, instrLoc, type, elementExpressions);
+            return new ListExpression(loc, instrLoc, type, elementExpressions);
           }
         }
         if (!(type instanceof ClassTypeExpression))
