@@ -36,13 +36,13 @@ for (let operator of operatorsList) {
 }
 
 class Scanner {
-  constructor(doc, text) {
+  constructor(doc, text, parseExpression) {
     this.doc = doc;
     this.text = text;
     this.pos = -1;
     this.startOfLine = 0;
     this.indentStack = [''];
-    this.bracketsDepth = 0;
+    this.bracketsDepth = parseExpression ? 1 : 0;
     this.emittedEOL = true;
     this.onNewLine = true;
     this.eat();
@@ -1322,9 +1322,9 @@ class ExecutionError extends LocError {
 }
 
 class Parser {
-  constructor(doc, text) {
+  constructor(doc, text, parseExpression) {
     this.doc = doc;
-    this.scanner = new Scanner(doc, text);
+    this.scanner = new Scanner(doc, text, parseExpression);
     this.token = this.scanner.nextToken();
     this.posStack = [];
   }
@@ -2129,7 +2129,7 @@ async function evaluateExpression(step) {
   await handleError(async () => {
     parseDeclarations();
     let exprText = expressionEditor.getValue();
-    let parser = new Parser(expressionEditor, exprText);
+    let parser = new Parser(expressionEditor, exprText, true);
     let e = parser.parseExpression();
     parser.expect("EOF");
     //e.check_(toplevelScope);
