@@ -1265,6 +1265,17 @@ class MethodDeclaration extends Declaration {
   }
 }
 
+class BuiltInMethodDeclaration {
+  constructor(paramNames, body) {
+    this.parameterDeclarations = paramNames;
+    this.body = body;
+  }
+  async call(callExpr, args) {
+    let result = await this.body(callExpr, args);
+    push(new OperandBinding(callExpr, result));
+  }
+}
+
 class FieldDeclaration extends Declaration {
   constructor(loc, type, name) {
     super(loc);
@@ -1864,6 +1875,12 @@ let toplevelMethods;
 function checkDeclarations(declarations) {
   classes = {};
   toplevelMethods = {};
+  toplevelMethods['len'] = new BuiltInMethodDeclaration(['l'], async (callExpr, args) => {
+    let arg = args[0];
+    if (!(arg instanceof ListObject))
+      throw new LocError(callExpr.loc, "len expects a list object");
+    return arg.length;
+  });
   for (let declaration of declarations) {
     if (declaration instanceof Class) {
       if (has(classes, declaration.name))
